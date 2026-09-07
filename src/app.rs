@@ -471,7 +471,7 @@ impl Piwrite {
         }
     }
 
-    fn print(&mut self, cx: &mut Context<Self>) {
+    fn print(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.document.text = self.editor_text(cx);
         let name = self.document.file_name();
         let tmp = std::env::temp_dir().join(format!("{name}.print.md"));
@@ -480,21 +480,32 @@ impl Piwrite {
             cx.notify();
             return;
         }
-        let printed = std::process::Command::new("lp")
-            .arg("-t")
-            .arg(&name)
-            .arg(&tmp)
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if printed {
-            self.document.status = format!("Printed {name}");
-        } else if open::that(&tmp).is_ok() {
-            self.document.status = format!("Opened print preview for {name}");
-        } else {
-            self.document.status = "Could not print.".into();
-        }
-        cx.notify();
+        let task = cx.background_executor().spawn(async move {
+            let printed = std::process::Command::new("lp")
+                .arg("-t")
+                .arg(&name)
+                .arg(&tmp)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            let opened = !printed && open::that_detached(&tmp).is_ok();
+            (printed, opened, name)
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let (printed, opened, name) = task.await;
+            this.update_in(cx, |this, _window, cx| {
+                if printed {
+                    this.document.status = format!("Printed {name}");
+                } else if opened {
+                    this.document.status = format!("Opened print preview for {name}");
+                } else {
+                    this.document.status = "Could not print.".into();
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn toggle_find(&mut self, replace: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -696,8 +707,8 @@ impl Piwrite {
     fn on_new_window(&mut self, _: &NewWindow, _: &mut Window, cx: &mut Context<Self>) {
         self.new_window(cx);
     }
-    fn on_print(&mut self, _: &Print, _: &mut Window, cx: &mut Context<Self>) {
-        self.print(cx);
+    fn on_print(&mut self, _: &Print, window: &mut Window, cx: &mut Context<Self>) {
+        self.print(window, cx);
     }
     fn on_find(&mut self, _: &Find, window: &mut Window, cx: &mut Context<Self>) {
         self.toggle_find(false, window, cx);
