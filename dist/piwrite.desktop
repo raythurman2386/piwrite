@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Piwrite
+GenericName=Markdown Writer
+Comment=Dead-simple Markdown writing app
+Exec=piwrite %f
+TryExec=piwrite
+Icon=piwrite
+Terminal=false
+StartupNotify=true
+Categories=Office;WordProcessor;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+Keywords=markdown;write;notes;text;editor;
+StartupWMClass=piwrite

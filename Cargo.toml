@@ -1,0 +1,39 @@
+[package]
+name = "piwrite"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A dead-simple Markdown writing app built with GPUI Kit"
+repository = "https://github.com/raythurman2386/piwrite"
+readme = "README.md"
+keywords = ["markdown", "editor", "gpui"]
+categories = ["gui", "text-editors"]
+
+[lib]
+name = "piwrite"
+path = "src/lib.rs"
+
+[[bin]]
+name = "piwrite"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+directories = "6"
+fs4 = "0.13"
+gpui-kit = { version = "0.6", features = ["tree-sitter-markdown", "tree-sitter-markdown-inline"] }
+notify = "7"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+open = "5"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[profile.dev]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2
