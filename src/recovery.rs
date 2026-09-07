@@ -2,7 +2,6 @@ use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use fs4::fs_std::FileExt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -36,7 +35,7 @@ impl RecoverySlot {
                     .read(true)
                     .write(true)
                     .open(&lock_path)?;
-                if lock.try_lock_exclusive().is_ok() {
+                if lock.try_lock().is_ok() {
                     return Ok(Self {
                         json_path,
                         _lock: lock,
