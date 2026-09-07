@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 directories = "6"
-fs4 = "0.13"
+fs4 = "1.1"
 gpui-kit = { version = "0.6", features = ["tree-sitter-markdown", "tree-sitter-markdown-inline"] }
 notify = "7"
 regex = "1"
