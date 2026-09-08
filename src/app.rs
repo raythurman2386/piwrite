@@ -108,7 +108,7 @@ enum PendingAction {
 struct FileWatch {
     events: Arc<Mutex<Vec<PathBuf>>>,
     watcher: Option<RecommendedWatcher>,
-    watched: Option<PathBuf>,
+    watched: Vec<PathBuf>,
 }
 
 impl FileWatch {
@@ -134,19 +134,42 @@ impl FileWatch {
         Self {
             events,
             watcher,
-            watched: None,
+            watched: Vec::new(),
         }
     }
 
     fn watch(&mut self, path: Option<&Path>) {
-        if let (Some(watcher), Some(old)) = (self.watcher.as_mut(), self.watched.take()) {
-            let _ = watcher.unwatch(&old);
+        self.unwatch_all();
+        if let Some(path) = path {
+            self.watch_path(path);
         }
-        if let (Some(watcher), Some(path)) = (self.watcher.as_mut(), path) {
-            if path.exists() {
-                let _ = watcher.watch(path, RecursiveMode::NonRecursive);
-                self.watched = Some(path.to_path_buf());
+    }
+
+    fn watch_all(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
+        self.unwatch_all();
+        for path in paths {
+            self.watch_path(&path);
+        }
+    }
+
+    fn watch_path(&mut self, path: &Path) {
+        if !path.exists() || self.watched.iter().any(|p| p == path) {
+            return;
+        }
+        if let Some(watcher) = self.watcher.as_mut() {
+            if watcher.watch(path, RecursiveMode::NonRecursive).is_ok() {
+                self.watched.push(path.to_path_buf());
             }
+        }
+    }
+
+    fn unwatch_all(&mut self) {
+        if let Some(watcher) = self.watcher.as_mut() {
+            for path in self.watched.drain(..) {
+                let _ = watcher.unwatch(&path);
+            }
+        } else {
+            self.watched.clear();
         }
     }
 
@@ -155,6 +178,10 @@ impl FileWatch {
             .lock()
             .map(|mut q| q.drain(..).collect())
             .unwrap_or_default()
+    }
+
+    fn needs_rearm(&self) -> bool {
+        self.watched.iter().any(|path| !path.exists())
     }
 }
 
@@ -173,9 +200,9 @@ pub struct Piwrite {
     pending: PendingAction,
     file_watch: FileWatch,
     theme_watch: FileWatch,
-    last_theme_check: Instant,
     last_recovery: Instant,
     _subscriptions: Vec<Subscription>,
+    _poll_task: Task<()>,
 }
 
 impl Piwrite {
@@ -200,9 +227,7 @@ impl Piwrite {
 
         let mut file_watch = FileWatch::new();
         let mut theme_watch = FileWatch::new();
-        for path in omarchy_watch_paths() {
-            theme_watch.watch(Some(&path));
-        }
+        theme_watch.watch_all(omarchy_watch_paths());
 
         if let Some(snapshot) = recovery.as_ref().and_then(|slot| slot.read()) {
             document.restore_recovery(snapshot);
@@ -250,6 +275,8 @@ impl Piwrite {
         apply_palette(&palette, text_scale, Some(window), cx);
         window.set_window_title(&document.window_title());
 
+        let (appearance_sub, poll_task) = Self::start_external_poll(window, cx);
+
         let focus = editor.focus_handle(cx);
         window.defer(cx, move |window, cx| {
             focus.focus(window, cx);
@@ -270,10 +297,31 @@ impl Piwrite {
             pending: PendingAction::None,
             file_watch,
             theme_watch,
-            last_theme_check: Instant::now(),
             last_recovery: Instant::now(),
-            _subscriptions: vec![editor_sub, search_sub],
+            _subscriptions: vec![editor_sub, search_sub, appearance_sub],
+            _poll_task: poll_task,
         }
+    }
+
+    fn start_external_poll(
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (Subscription, Task<()>) {
+        let appearance = cx.observe_window_appearance(window, |this, window, cx| {
+            this.poll_external(window, cx);
+        });
+        let poll = cx.spawn_in(window, async move |this, cx| loop {
+            cx.background_executor()
+                .timer(Duration::from_millis(400))
+                .await;
+            if this
+                .update_in(cx, |this, window, cx| this.poll_external(window, cx))
+                .is_err()
+            {
+                break;
+            }
+        });
+        (appearance, poll)
     }
 
     fn schedule_recovery(&mut self) {
@@ -611,22 +659,23 @@ impl Piwrite {
     }
 
     fn poll_external(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.last_theme_check.elapsed() > Duration::from_millis(400) {
-            self.last_theme_check = Instant::now();
-            if !self.theme_watch.drain().is_empty() {
-                let palette = OmarchyPalette::load(self.palette.dark);
-                if palette != self.palette {
-                    self.palette = palette;
-                    apply_palette(&self.palette, self.text_scale, Some(window), cx);
-                    cx.notify();
-                }
-            }
-            let scale = detect_text_scale();
-            if (scale - self.text_scale).abs() > f32::EPSILON {
-                self.text_scale = scale;
-                apply_palette(&self.palette, self.text_scale, Some(window), cx);
-                cx.notify();
-            }
+        let events = self.theme_watch.drain();
+        // Omarchy replaces `current/theme` with `rm -rf` + `mv`, which
+        // invalidates inotify watches on that directory and colors.toml.
+        if !events.is_empty() || self.theme_watch.needs_rearm() {
+            self.theme_watch.watch_all(omarchy_watch_paths());
+        }
+        let palette = OmarchyPalette::load(detect_system_dark());
+        if palette != self.palette {
+            self.palette = palette;
+            apply_palette(&self.palette, self.text_scale, Some(window), cx);
+            cx.notify();
+        }
+        let scale = detect_text_scale();
+        if (scale - self.text_scale).abs() > f32::EPSILON {
+            self.text_scale = scale;
+            apply_palette(&self.palette, self.text_scale, Some(window), cx);
+            cx.notify();
         }
         if self.document.modified && self.last_recovery.elapsed() > Duration::from_millis(750) {
             self.document.text = self.editor_text(cx);
@@ -783,10 +832,25 @@ fn apply_palette(
     }
     if let Some(fg) = hex_to_hsla(&palette.foreground) {
         theme.foreground = fg;
+        theme.secondary_foreground = fg;
     }
     if let Some(accent) = hex_to_hsla(&palette.accent) {
         theme.primary = accent;
         theme.accent = accent;
+    }
+    if let Some(hover) = hex_to_hsla(&palette.hover) {
+        // Ghost buttons hover with `secondary.lighten/darken`. Default GPUI
+        // dark secondary is nearly the same as Omarchy page backgrounds.
+        theme.secondary = hover;
+        theme.secondary_hover = hover;
+        theme.secondary_active = hover;
+    }
+    if let Some(muted) = hex_to_hsla(&palette.muted) {
+        theme.muted = muted;
+        theme.muted_foreground = muted;
+    }
+    if let Some(selection) = hex_to_hsla(&palette.selection) {
+        theme.selection = selection;
     }
     theme.mono_font_family = "iA Writer Mono S".into();
     theme.font_family = "iA Writer Mono S".into();
@@ -808,13 +872,7 @@ fn hex_to_hsla(value: &str) -> Option<Hsla> {
 
 impl Render for Piwrite {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.poll_external(window, cx);
-
-        let muted = if self.palette.dark {
-            rgb(0x909191)
-        } else {
-            rgb(0xaeb1b5)
-        };
+        let muted = hex_to_hsla(&self.palette.muted).unwrap_or(rgb(0x909191).into());
         let page = hex_to_hsla(&self.palette.background).unwrap_or(cx.theme().background);
         let editor_width = px((65.0_f32 * 12.0 * self.text_scale)
             .min(window.bounds().size.width.as_f32() - 80.0)
@@ -870,7 +928,6 @@ impl Render for Piwrite {
                     .px(self.scaled(12.))
                     .pb(self.scaled(10.))
                     .gap(self.scaled(12.))
-                    .opacity(0.7)
                     .child(
                         Button::new("save")
                             .ghost()
