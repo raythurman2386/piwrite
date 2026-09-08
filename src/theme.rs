@@ -46,6 +46,10 @@ pub struct OmarchyPalette {
     pub foreground: String,
     pub accent: String,
     pub selection: String,
+    pub muted: String,
+    /// Elevated surface used for ghost-button hover. Omarchy's
+    /// `lighter_background` (dark) / `darker_background` (light).
+    pub hover: String,
 }
 
 impl OmarchyPalette {
@@ -57,6 +61,8 @@ impl OmarchyPalette {
                 foreground: "#eeeeee".into(),
                 accent: "#5584aa".into(),
                 selection: "#186a9a".into(),
+                muted: "#909191".into(),
+                hover: "#2a2a2a".into(),
             }
         } else {
             Self {
@@ -65,15 +71,9 @@ impl OmarchyPalette {
                 foreground: "#222324".into(),
                 accent: "#2077b2".into(),
                 selection: "#2077b2".into(),
+                muted: "#aeb1b5".into(),
+                hover: "#e8e8e8".into(),
             }
-        }
-    }
-
-    pub fn muted(&self) -> &'static str {
-        if self.dark {
-            "#909191"
-        } else {
-            "#aeb1b5"
         }
     }
 
@@ -87,6 +87,9 @@ impl OmarchyPalette {
             return palette;
         };
         let mut mode = String::new();
+        let mut lighter = None;
+        let mut darker = None;
+        let mut muted_from_file = false;
         for line in raw.lines() {
             let line = line.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -103,6 +106,12 @@ impl OmarchyPalette {
                 "foreground" => palette.foreground = value,
                 "accent" => palette.accent = value,
                 "selection" => palette.selection = value,
+                "muted" => {
+                    palette.muted = value;
+                    muted_from_file = true;
+                }
+                "lighter_background" => lighter = Some(value),
+                "darker_background" => darker = Some(value),
                 _ => {}
             }
         }
@@ -113,6 +122,15 @@ impl OmarchyPalette {
         } else if let Some(bg) = parse_hex_color(&palette.background) {
             palette.dark = bg.luminance() < 0.5;
         }
+        let resolved = Self::fallback(palette.dark);
+        if !muted_from_file {
+            palette.muted = resolved.muted;
+        }
+        palette.hover = if palette.dark {
+            lighter.unwrap_or(resolved.hover)
+        } else {
+            darker.unwrap_or(resolved.hover)
+        };
         palette
     }
 }
@@ -192,24 +210,53 @@ fn home_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+
+    fn palette_from(name: &str, dark_hint: bool, body: &str) -> OmarchyPalette {
+        let dir = std::env::temp_dir().join(format!("piwrite-theme-{name}-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("colors.toml");
+        fs::write(&path, body).unwrap();
+        let palette = OmarchyPalette::from_colors_file(&path, dark_hint);
+        let _ = fs::remove_dir_all(&dir);
+        palette
+    }
 
     #[test]
     fn loads_omarchy_theme() {
-        let dir = std::env::temp_dir().join(format!("piwrite-theme-{}", std::process::id()));
-        let _ = fs::create_dir_all(&dir);
-        let path = dir.join("colors.toml");
-        let mut file = fs::File::create(&path).unwrap();
-        file.write_all(
-            b"mode = \"light\"\naccent = \"#112233\"\nselection = \"#445566\"\nbackground = \"#fefefe\"\nforeground = \"#101010\"\n",
-        )
-        .unwrap();
-        let palette = OmarchyPalette::from_colors_file(&path, true);
+        let palette = palette_from(
+            "basic",
+            true,
+            "mode = \"light\"\naccent = \"#112233\"\nselection = \"#445566\"\nbackground = \"#fefefe\"\nforeground = \"#101010\"\n",
+        );
         assert_eq!(palette.background, "#fefefe");
         assert_eq!(palette.foreground, "#101010");
         assert_eq!(palette.accent, "#112233");
         assert_eq!(palette.selection, "#445566");
         assert!(!palette.dark);
-        let _ = fs::remove_dir_all(&dir);
+        assert_eq!(palette.hover, OmarchyPalette::fallback(false).hover);
+    }
+
+    #[test]
+    fn dark_hover_uses_lighter_background() {
+        let palette = palette_from(
+            "dark",
+            false,
+            "mode = \"dark\"\nbackground = \"#222822\"\nforeground = \"#e8d5b7\"\naccent = \"#4ade80\"\nselection = \"#e8d5b7\"\nmuted = \"#7f897d\"\nlighter_background = \"#2d3830\"\ndarker_background = \"#141814\"\n",
+        );
+        assert!(palette.dark);
+        assert_eq!(palette.hover, "#2d3830");
+        assert_eq!(palette.muted, "#7f897d");
+    }
+
+    #[test]
+    fn light_hover_uses_darker_background() {
+        let palette = palette_from(
+            "light",
+            true,
+            "mode = \"light\"\nbackground = \"#f5f4ed\"\nforeground = \"#3f4a45\"\naccent = \"#064e3b\"\nselection = \"#3f4a45\"\nmuted = \"#7a8478\"\nlighter_background = \"#e8e7dc\"\ndarker_background = \"#edece1\"\n",
+        );
+        assert!(!palette.dark);
+        assert_eq!(palette.hover, "#edece1");
+        assert_eq!(palette.muted, "#7a8478");
     }
 }
