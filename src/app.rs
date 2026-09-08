@@ -15,6 +15,7 @@ use gpui_kit::*;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
 use piwrite::document::{app_paths, DocumentStore};
+use piwrite::icons::SaveIcon;
 use piwrite::markdown::{
     find_all, insert_link_markdown, normalized_link_url, smart_return, wrap_selection, SearchMatch,
 };
@@ -863,7 +864,7 @@ impl Render for Piwrite {
                         Button::new("save")
                             .ghost()
                             .xsmall()
-                            .icon(IconName::File)
+                            .icon(SaveIcon::Save)
                             .tooltip("Save")
                             .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                     )
