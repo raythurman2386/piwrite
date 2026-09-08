@@ -1,6 +1,7 @@
 //! Testable writing-app logic shared by the GPUI Kit UI.
 
 pub mod document;
+pub mod icons;
 pub mod markdown;
 pub mod recovery;
 pub mod theme;

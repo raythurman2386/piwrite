@@ -5105,6 +5105,7 @@ dependencies = [
  "notify 8.2.0",
  "open",
  "regex",
+ "rust-embed",
  "serde",
  "serde_json",
 ]
