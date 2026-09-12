@@ -13,4 +13,6 @@ pub use markdown::{
     InlineKind, InlineMarkup, SearchMatch, Span,
 };
 pub use recovery::{RecoverySlot, RecoverySnapshot};
-pub use theme::{parse_hex_color, OmarchyPalette, RgbaColor};
+pub use theme::{
+    clamp_selection_alpha, parse_hex_color, selection_highlight, OmarchyPalette, RgbaColor,
+};
