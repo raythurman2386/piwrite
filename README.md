@@ -6,6 +6,25 @@ A focused writing surface that follows system dark/light mode, picks up Omarchy 
 
 ## Install
 
+### Netinstaller (recommended)
+
+One line — downloads the latest release for your architecture, verifies its Ed25519 signature against the pinned public key and its SHA-256 against the signed checksums, and refuses to install anything that fails either check:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/raythurman2386/piwrite/main/scripts/netinstall.sh | bash
+```
+
+Or clone and run (same verification, easier to read before running):
+
+```sh
+git clone https://github.com/raythurman2386/piwrite
+./piwrite/scripts/netinstall.sh
+```
+
+Both put `piwrite` on `~/.local/bin`, install the desktop entry, icon, and Markdown file associations, and accept an optional version argument (`./netinstall.sh 0.1.3`) plus `--force` to overwrite an existing install.
+
+### From source
+
 User-local install (binary, icon, launcher). No root:
 
 ```sh
