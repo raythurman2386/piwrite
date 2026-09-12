@@ -23,6 +23,28 @@ Uninstall with `./scripts/uninstall.sh`.
 
 Tagged releases (`v*`) build Linux tarballs on GitHub Actions for both `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (glibc 2.39+ — Debian 12/13, Raspberry Pi OS, Ubuntu 24.04). Unpack the one for your architecture and run `./install.sh` inside.
 
+## Release signing
+
+Every release's `checksums.txt` is signed with an Ed25519 key. The signature (`checksums.txt.sig`) is attached to the release; the public key is committed at `piwrite-signing-key.pub` and pinned in `scripts/netinstall.sh`, which refuses to install a release it cannot authenticate. The secret key is kept offline — it is never committed, never used in CI, and never uploaded.
+
+Maintainer flow (local machine only, `openssl` + `gh` required):
+
+```sh
+# once: generate the keypair into ~/.piwrite/signing
+./scripts/gen-signing-key.sh
+
+# after a release publishes: sign its checksums.txt offline, then attach
+./scripts/sign-releases.sh v0.1.3
+./scripts/upload-release-sigs.sh v0.1.3
+```
+
+Signing and uploading are separate scripts so the secret key never touches a network call. Verify a release's signature by hand:
+
+```sh
+gh release download v0.1.3 -p 'checksums.txt*'
+openssl pkeyutl -verify -rawin -in checksums.txt -sigfile checksums.txt.sig -pubin -inkey piwrite-signing-key.pub
+```
+
 ## Run from source
 
 ```sh
