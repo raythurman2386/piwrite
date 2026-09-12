@@ -20,7 +20,9 @@ use piwrite::markdown::{
     find_all, insert_link_markdown, normalized_link_url, smart_return, wrap_selection, SearchMatch,
 };
 use piwrite::recovery::RecoverySlot;
-use piwrite::theme::{detect_system_dark, detect_text_scale, omarchy_watch_paths, OmarchyPalette};
+use piwrite::theme::{
+    detect_system_dark, detect_text_scale, omarchy_watch_paths, selection_highlight, OmarchyPalette,
+};
 
 actions!(
     piwrite_actions,
@@ -849,8 +851,16 @@ fn apply_palette(
         theme.muted = muted;
         theme.muted_foreground = muted;
     }
-    if let Some(selection) = hex_to_hsla(&palette.selection) {
-        theme.selection = selection;
+    if let Some(selection) =
+        selection_highlight(&palette.selection, &palette.foreground, &palette.background)
+    {
+        theme.selection = gpui::Rgba {
+            r: selection.r,
+            g: selection.g,
+            b: selection.b,
+            a: selection.a,
+        }
+        .into();
     }
     theme.mono_font_family = "iA Writer Mono S".into();
     theme.font_family = "iA Writer Mono S".into();
