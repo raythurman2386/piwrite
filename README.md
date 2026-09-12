@@ -21,7 +21,7 @@ piwrite path/to/notes.md
 
 Uninstall with `./scripts/uninstall.sh`.
 
-Tagged releases (`v*`) build a Linux x86_64 tarball on GitHub Actions. Unpack it and run `./install.sh` inside.
+Tagged releases (`v*`) build Linux tarballs on GitHub Actions for both `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (glibc 2.39+ — Debian 12/13, Raspberry Pi OS, Ubuntu 24.04). Unpack the one for your architecture and run `./install.sh` inside.
 
 ## Run from source
 
